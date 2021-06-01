@@ -1,52 +1,77 @@
 #!/usr/bin/env python
 
 import sys
+import argparse
 
-with open(sys.argv[1],"rb") as file:
-    file.seek(0)
-    pdf = file.read()
+PROGNAME = 'pdf-jpeg-extract-dirty.py'
+VERSION = '0.2'
 
-startmark = b"\xff\xd8"
-startmark2 = b"\x00\x00\x00\x0C"
-startfix = 0
-endmark = b"\xff\xd9"
-endfix = 2
-i = 0
+def pdf_extract_images(pdfname, prefix):
+    startmarkjpg = b"\xff\xd8"
+    startmarkjp2 = b"\x00\x00\x00\x0C"
+    startfix = 0
+    endmarkjp = b"\xff\xd9"
+    endfix = 2
+    i = 0
 
-njpg = 0
-while True:
-    istream = pdf.find(b"stream", i)
-    if istream < 0:
-        break
-    istart = pdf.find(startmark, istream, istream + 20)
-    istart2 = pdf.find(startmark2, istream, istream + 20)
-    if (istart < 0) and (istart2 < 0):
-        i = istream + 20
-        continue
-    if istart2 < 0:
-        iend = pdf.find(b"endstream", istart)
-    if istart < 0:
-        iend = pdf.find(b"endstream", istart2)
-    if iend < 0:
-        raise Exception("Didn't find end of stream!")
-    iend = pdf.find(endmark, iend - 20)
-    if iend < 0:
-        raise Exception("Didn't find end of JPG!")
+    with open(pdfname) as file:
+        file.seek(0)
+        pdf = file.read()
 
-    if istart2 < 0:
-        istart += startfix
-        iend += endfix
-        print("JPG %d from %d to %d" % (njpg, istart, iend))
-        jpg = pdf[istart:iend]
-        with open("jpg%04d.jpg" % njpg, "wb") as jpgfile:
-            jpgfile.write(jpg)
-    if istart < 0:
-        istart2 += startfix
-        iend += endfix
-        print("JP2 %d from %d to %d" % (njpg, istart, iend))
-        jp2 = pdf[istart2:iend]
-        with open("jpg%04d.jp2" % njpg, "wb") as jpxfile:
-            jpxfile.write(jp2)
+    njpg = 0
+    while True:
+        istream = pdf.find(b"stream", i)
+        if istream < 0:
+            break
+        iend = pdf.find(b"endstream", istream)
+        if iend < 0:
+            break
+        iformat = ""
+        istartjpg = pdf.find(startmarkjpg, istream, istream + 20)
+        istartjp2 = pdf.find(startmarkjp2, istream, istream + 20)
+        if ((istartjpg >= 0) or (istartjp2 >= 0)):
+            istart = 0
+            if (istartjpg >= istartjp2):
+                iformat = "jpg"
+                istart = istartjpg
+            else:
+                iformat = "jp2"
+                istart = istartjp2
+            iend = pdf.find(endmarkjp, iend - 20)
+            if (iend < 0):
+                raise Exception("Didn't find end of JPG!")
 
-    njpg += 1
-    i = iend
+            istart += startfix
+            iend += endfix
+            print("%s %d from %d to %d" % (iformat, njpg, istart, iend))
+            jp = pdf[istart:iend]
+            with open(prefix + "%04d." % njpg + iformat, "wb") as jpfile:
+                jpfile.write(jp)
+            njpg += 1
+            i = iend
+        else:
+            i = istream + 20
+
+def print_version():
+    print (PROGNAME)
+    print (VERSION)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Extract JPEG and JP2 from PDF')
+    parser.add_argument(
+        '-p',
+        '--prefix',
+        metavar='prefix',
+        type=str,
+        default='img',
+        help='prefix output image name, default img')
+    parser.add_argument(
+        '-v',
+        '--version',
+        action='version',
+        version=print_version())
+    parser.add_argument('pdfname', help='PDF file name')
+    args = parser.parse_args()
+    pdf_extract_images(args.pdfname, args.prefix)
